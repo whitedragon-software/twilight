@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Twilight</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#fff;color:#111;font:15px/1.5 "Inter",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.app{width:360px;text-align:center;padding:24px}
+.wordmark{font-size:12px;letter-spacing:.25em;color:#b5b5b5;text-transform:uppercase;margin-bottom:36px}
+.dot{width:88px;height:88px;border-radius:50%;margin:0 auto 20px;background:#e4e4e4;transition:background .35s ease}
+.dot.on{background:#18a957}
+.dot.mid{background:#e8a300}
+h1{font-size:18px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+.state{color:#8a8a8a;font-size:14px;min-height:22px}
+.exit{color:#8a8a8a;font-size:13px;margin:12px 0 26px;min-height:18px}
+button{font-family:inherit;font-size:15px;font-weight:600;border-radius:999px;padding:13px 52px;cursor:pointer;border:1px solid #111;background:#111;color:#fff;transition:opacity .15s}
+button:hover{opacity:.85}
+button.ghost{background:#fff;color:#111;border-color:#d9d9d9}
+button:disabled{opacity:.4;cursor:default}
+.row{display:flex;gap:10px;justify-content:center;align-items:center;min-height:49px}
+.meta{margin-top:30px;font-size:12px;color:#9a9a9a;line-height:1.8}
+.meta b{color:#6f6f6f;font-weight:600}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="wordmark">Twilight</div>
+  <div class="dot" id="dot"></div>
+  <h1 id="title">Twilight</h1>
+  <div class="state" id="state">Checking…</div>
+  <div class="exit" id="exit"></div>
+  <div class="row">
+    <button id="main" disabled>…</button>
+    <button id="new" class="ghost" style="display:none">New identity</button>
+  </div>
+  <div class="meta" id="meta"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+async function api(path, body){
+  const r = await fetch(path, {method: body ? 'POST' : 'GET',
+    headers: {'Content-Type': 'application/json'},
+    body: body ? JSON.stringify(body) : undefined});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+async function refresh(){
+  let st;
+  try { st = await api('/api/status'); }
+  catch (e) { $('state').textContent = 'Backend unreachable: ' + e.message; return; }
+  const connected = st.active && st.handshake;
+  $('dot').className = 'dot' + (connected ? ' on' : (st.active ? ' mid' : ''));
+  $('state').textContent = st.error ? ('Error: ' + st.error) :
+    (connected ? 'Connected — traffic exits via Cloudflare WARP' :
+     (st.active ? 'Connecting — establishing handshake…' :
+      (st.registered ? 'Not connected' : 'Not registered yet')));
+  $('exit').textContent = connected && st.exit ?
+    ('Exit ' + st.exit.ip + '  ·  ' + st.exit.colo + '  ·  warp=' + st.exit.warp) : '';
+  const main = $('main'), neu = $('new');
+  main.disabled = false;
+  if (!st.registered) {
+    main.textContent = 'Register device'; main.className = ''; main.dataset.act = 'register';
+    neu.style.display = 'none';
+  } else if (st.active) {
+    main.textContent = 'Disconnect'; main.className = 'ghost'; main.dataset.act = 'disconnect';
+    neu.style.display = 'none';
+  } else {
+    main.textContent = 'Connect'; main.className = ''; main.dataset.act = 'connect';
+    neu.style.display = '';
+  }
+  const sp = st.sysproxy && st.sysproxy.enabled ?
+    'System proxy: <b>on (' + st.sysproxy.addr + ')</b>' :
+    'System proxy: off' + (st.sysproxy && st.sysproxy.note ? ' — ' + st.sysproxy.note : '');
+  $('meta').innerHTML = sp +
+    '<br>HTTP proxy 127.0.0.1:8080 · SOCKS5 127.0.0.1:1080' +
+    (st.expires ? '<br>Identity expires ≈ ' + st.expires : '');
+}
+$('main').onclick = async () => {
+  const main = $('main'), act = main.dataset.act;
+  main.disabled = true;
+  try { await api('/api/' + act, {}); }
+  catch (e) { $('state').textContent = e.message; }
+  setTimeout(refresh, 300);
+};
+$('new').onclick = async () => {
+  const neu = $('new');
+  neu.disabled = true;
+  try { await api('/api/register', {force: true}); $('state').textContent = 'New identity created.'; }
+  catch (e) { $('state').textContent = e.message; }
+  neu.disabled = false;
+  refresh();
+};
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
